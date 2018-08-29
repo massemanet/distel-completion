@@ -4,6 +4,7 @@
 
 ;; Author: Sebastian Weddmark Olsson
 ;; URL: github.com/sebastiw/distel-completion
+;; Package-Version: 20161003.639
 ;; Version: 1.0.0
 ;; Package-Requires: ((distel-completion-lib "1.0.0"))
 ;; Keywords: Erlang Distel company
@@ -75,26 +76,14 @@ function or a last used.")
      ;; the full documentation accessable by pressing <f1>
      (company-distel-get-help args))
     (post-completion
-     ;; start completion for functions in the given module.
-     ;; 1. Add a ":" after module completion, or "()" after local function
-     ;;    completion, or even arguments after full mod:fun completion.
-     ;; 2. If module completion, start functions-completion.
-
-     ;;  (company-distel-functions)
-
-     (company-distel-post-completion args)
+     (run-with-timer 0 nil 'company-distel--post-complete args))
      ;; Restart completion if it was a module that was inserted
-     (when (eq (last (char-before)) ?\:) (company-manual-begin)))
     (sorted
      ;; if the list is sorted or not
      t)
     (duplicates
      ;; if there are duplicates or not; there could actually be duplicates but
      ;; we dont care about them because the list must be sorted.
-     nil)
-    (require-match
-     ;; We want the auto-completion popup to go away if we type a word that
-     ;; isn't in the list.
      nil)
     (ignore-case
      ;; Erlang uses it's cases. Turn this off.
@@ -108,8 +97,19 @@ function or a last used.")
      nil)
     ))
 
+(defun company-distel--post-complete (prefix)
+  "If we complete a module, we want to complete a function immediately.
+Check if PREFIX ends with a ':'."
+  (message "post-completion %s" prefix)
+  (if (string-suffix-p ":" prefix)
+      (progn
+        (company-begin-with (company-distel-get-candidates prefix))
+        (let ((this-command 'company-idle-begin))
+          (company-post-command)))
+    ""))
+
 (defun company-distel-find-prefix ()
-  "Get word at point if it is not in a comment or a cite. If it
+  "Get word at point if it is not in a comment or a cite.  If it
 couldn't find any return 'stop."
   (let (;; Check if point is within a comment or a citation
         (no-comment (not (distel-completion-is-comment-or-cite-p)))
