@@ -68,7 +68,9 @@ function or a last used.")
      (company-distel-find-prefix))
     (candidates
      ;; returns the completion candidates
-     (company-distel-get-candidates args))
+     (progn
+       (message "company-distel - candidates: %s" args)
+       (if args (company-distel-get-candidates args))))
     (meta
      ;; a oneline docstring
      (company-distel-get-metadoc args))
@@ -76,7 +78,9 @@ function or a last used.")
      ;; the full documentation accessable by pressing <f1>
      (company-distel-get-help args))
     (post-completion
-     (run-with-timer 0 nil 'company-distel--post-complete args))
+     (progn
+       (message "company-distel - candidates: %s" args)
+       (run-with-timer 0 nil 'company-distel--post-complete args)))
      ;; Restart completion if it was a module that was inserted
     (sorted
      ;; if the list is sorted or not
@@ -101,12 +105,19 @@ function or a last used.")
   "If we complete a module, we want to complete a function immediately.
 Check if PREFIX ends with a ':'."
   (message "post-completion %s" prefix)
-  (if (string-suffix-p ":" prefix)
-      (progn
-        (company-begin-with (company-distel-get-candidates prefix))
-        (let ((this-command 'company-idle-begin))
-          (company-post-command)))
-    ""))
+  (pcase (substring prefix -1)
+    (":"
+     (progn
+       (company-begin-with (company-distel-get-candidates prefix))
+       (let ((this-command 'company-idle-begin))
+         (company-post-command))))
+    ("("
+     (progn
+       (company-begin-with (company-distel-get-args prefix))
+       (let ((this-command 'company-idle-begin))
+         (company-post-command))))
+    (t
+     nil)))
 
 (defun company-distel-find-prefix ()
   "Get word at point if it is not in a comment or a cite.  If it
@@ -127,8 +138,8 @@ couldn't find any return 'stop."
 
 (defun company-distel-get-candidates (prefix)
   "Return a list of completion candidates."
-  (let (;; erl-dabbrevs lookback in the current function for words starting with
-        ;; `prefix'
+  (let (;; erl-dabbrevs lookback in the current function for
+        ;; words starting with `prefix'
         (erl-dabbrevs (distel-completion-get-dabbrevs prefix))
         ;; Lookup distel-completion of modules and functions
         (cc (distel-completion-complete prefix (current-buffer)))
@@ -139,25 +150,37 @@ couldn't find any return 'stop."
     ;; abbreviations mean anymore. It is used in the frontend to determine
     ;; wether to add a ":" after the completion candidate or a "(" for local
     ;; functions.
-    (dolist (item cc) (puthash item 'cc company-distel-completion-info))
+    (dolist (item cc)
+      (puthash item 'cc company-distel-completion-info))
     (dolist (item erl-dabbrevs)
       (puthash item 'lu company-distel-completion-info))
-    (dolist (item local-funs) (puthash item 'lu company-distel-completion-info))
+    (dolist (item local-funs)
+      (puthash item 'lu company-distel-completion-info))
 
     ;; Return all matches
     (append erl-dabbrevs
             local-funs
             cc)))
 
-(defun company-distel-get-metadoc (candidate)
-  "Meta-doc is a oneline documentation string, consisting of the
-arguments for the function completion candidate."
+(defun company-distel-get-args (candidate)
+  "Return argument list for CANDIDATE.
+CANDIDATE is the string `mod:fun'"
   (let* ((isok (string-match ":" candidate))
          (mod (and isok (substring candidate 0 isok)))
          (fun (and isok (substring candidate (+ isok 1))))
-         (met (distel-completion-get-metadoc mod fun)))
-    (when isok
-      (concat "Args: " (erl-format-arglists met)))))
+         (args (unless (eq "" fun) (distel-completion-args mod fun))))
+    (when (and mod fun args)
+      (concat fun (erl-format-arglists args)))))
+
+(defun company-distel-get-metadoc (candidate)
+  "Return a oneline documentation string.
+We use the arglist of CANDIDATE.  CANDIDATE is the string `mod:fun'"
+  (let* ((isok (string-match ":" candidate))
+         (mod (and isok (substring candidate 0 isok)))
+         (fun (and isok (substring candidate (+ isok 1))))
+         (met (unless (eq "" fun) (distel-completion-describe mod fun))))
+    (when (and mod fun met)
+      (concat fun (erl-format-arglists met)))))
 
 (defun company-distel-get-help (candidate)
   "Get the company-mode's doc-buffer. If `company-distel-popup-help'
@@ -168,42 +191,6 @@ buffer."
       (unless (featurep 'popup) (require 'popup))
       (popup-tip help-text :height company-distel-popup-height))
     help-text))
-
-(defun company-distel-post-completion (result)
-  "After completion, it could be a good idea to add some extra
-symbols (':', '(', etc.) and restart the completion."
-  (let* ((module-end (string-match ":" result))
-	 (mod (substring result 0 module-end))
-	 (fun (and module-end (substring result (+ module-end 1))))
-	 (arg (and fun (distel-completion-get-metadoc mod fun)))
-         (info (gethash result company-distel-completion-info))
-         (extra-symbols (or
-                         (and
-                          ;; does not include a ":"
-                          (not module-end)
-                          ;; and if first char is a downcase
-                          (if (eq (string-to-char result)
-                                  (downcase (string-to-char result)))
-                              ;; it is either a local function or a module
-                              (if (eql info 'lu)
-                                  "("
-                                ":")
-                            ;; otherwise it is a variable; dont care, return
-                            ""))
-                         ;; if it is an external function and it has only one
-                         ;; arity; expand the arguments, otherwise just add the
-                         ;; starting parenthesis.
-                         (or  (and (= (length arg) 1) (erl-format-arglists arg))
-                              "("))))
-
-    (insert extra-symbols)
-
-    ;; Restart completion if it was a module that was inserted
-    (when (and mod (not fun) (eql info 'cc)) (company-manual-begin))
-
-    ;; Return inserted word
-    (concat result extra-symbols)))
-
 
 (provide 'company-distel)
 ;;; company-distel.el ends here
