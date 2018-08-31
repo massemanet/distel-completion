@@ -123,56 +123,36 @@
 (defvar distel-completion-try-erl-complete-cache '()
   "Completion candidates cache.")
 
-(defun distel-completion-args (mod fun)
-  "Get the arguments for a MOD and FUN."
-  (message "distel-completion-get-metadoc: %s %s" mod fun)
-  (let ((node erl-nodename-cache))
-    (distel-completion-args mod fun))
-  (sleep-for 0.1)
-  distel-completion-try-erl-args-cache)
-
-(defun distel-completion-local-docs (mod fun)
-  "Get local documentation for a MOD and FUN."
-  (message "distel-completion-local-docs: %s %s" mod fun)
-  (distel-completion-get-metadoc mod fun)
-  (let ((node erl-nodename-cache))
-    (setq distel-completion-try-erl-desc-cache "")
-    (dolist (args distel-completion-try-erl-args-cache)
-      (distel-completion-describe mod fun args)))
-  (sleep-for 0.1)
-  distel-completion-try-erl-desc-cache)
-
-(defun distel-completion-metadoc (mod fun)
+(defun distel-completion-describe (mod fun)
   "Get the documentation of function MOD:FUN."
-  (erl-spawn
-    (erl-send-rpc node 'distel 'describe (list (intern mod)
-					       (intern fun)))
-    (&distel-completion-receive-describe)))
+  (let ((node erl-nodename-cache))
+    (erl-spawn
+      (erl-send-rpc node 'distel 'describe (list (intern mod)
+                                                 (intern fun)))
+      (&distel-completion-receive-describe)))
+  distel-completion-try-erl-desc-cache)
 
 (defun &distel-completion-receive-describe ()
   (erl-receive ()
       ((['rex ['ok desc]]
-	(let ((descr (format "%s:%s/%s\n%s\n\n"
-			     (elt (car desc) 0)
-			     (elt (car desc) 1)
-			     (elt (car desc) 2)
-			     (elt (car desc) 3))))
-          (when desc
-            (setq distel-completion-try-erl-desc-cache
-                  (concat descr distel-completion-try-erl-desc-cache)))))
+        (when desc
+          (setq distel-completion-try-erl-desc-cache (car desc))))
        (else
-	(message "fail: %s" else)))))
+	(message "fail: %s" else)
+	(setq distel-completion-try-erl-desc-cache '())))))
 
 (defun distel-completion-args (mod fun)
   "Find the arguments to a function MOD:FUN."
-  (erl-spawn
-    (erl-send-rpc node 'distel 'arglists (list mod fun))
-    (&distel-completion-receive-args)))
+  (let ((node erl-nodename-cache))
+    (erl-spawn
+      (erl-send-rpc node 'distel 'arglists (list mod fun))
+      (&distel-completion-receive-args)))
+  distel-completion-try-erl-args-cache)
 
 (defun &distel-completion-receive-args ()
   (erl-receive ()
       ((['rex 'error])
-       (['rex docs]
+       (['rex ['ok docs]]
 	(setq distel-completion-try-erl-args-cache docs))
        (else
 	(message "fail: %s" else)

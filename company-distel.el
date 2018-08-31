@@ -69,7 +69,6 @@ function or a last used.")
     (candidates
      ;; returns the completion candidates
      (progn
-       (message "company-distel - candidates: %s" args)
        (if args (company-distel-get-candidates args))))
     (meta
      ;; a oneline docstring
@@ -79,7 +78,6 @@ function or a last used.")
      (company-distel-get-help args))
     (post-completion
      (progn
-       (message "company-distel - candidates: %s" args)
        (run-with-timer 0 nil 'company-distel--post-complete args)))
      ;; Restart completion if it was a module that was inserted
     (sorted
@@ -104,7 +102,6 @@ function or a last used.")
 (defun company-distel--post-complete (prefix)
   "If we complete a module, we want to complete a function immediately.
 Check if PREFIX ends with a ':'."
-  (message "post-completion %s" prefix)
   (pcase (substring prefix -1)
     (":"
      (progn
@@ -170,7 +167,7 @@ CANDIDATE is the string `mod:fun'"
          (fun (and isok (substring candidate (+ isok 1))))
          (args (unless (eq "" fun) (distel-completion-args mod fun))))
     (when (and mod fun args)
-      (concat fun (erl-format-arglists args)))))
+      args)))
 
 (defun company-distel-get-metadoc (candidate)
   "Return a oneline documentation string.
@@ -178,9 +175,9 @@ We use the arglist of CANDIDATE.  CANDIDATE is the string `mod:fun'"
   (let* ((isok (string-match ":" candidate))
          (mod (and isok (substring candidate 0 isok)))
          (fun (and isok (substring candidate (+ isok 1))))
-         (met (unless (eq "" fun) (distel-completion-describe mod fun))))
-    (when (and mod fun met)
-      (concat fun (erl-format-arglists met)))))
+         (dsc (unless (eq "" fun) (distel-completion-describe mod fun))))
+    (when (and mod fun dsc)
+      dsc)))
 
 (defun company-distel-get-help (candidate)
   "Get the company-mode's doc-buffer. If `company-distel-popup-help'
