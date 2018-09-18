@@ -94,8 +94,18 @@
 ;;; Distel funs       ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defvar distel-completion-sync nil
+  "Global variable to sync between buffers.")
+
+(defun distel-completion--wait-for-sync ()
+  "Use global variable distel-completion-sync to sync between buffers."
+  (if distel-completion-sync
+      distel-completion-sync
+    (sit-for 0.1)
+    (distel-completion--wait-for-sync)))
+
 (defun distel-completion-complete (search-string buf)
-  "Complete `search-string' as a external module or function in current buffer."
+  "Complete SEARCH-STRING as a external module or function in BUF."
   (let* (;; Checks if there exists a ":" in the search-string
          (isok (string-match ":" search-string))
          ;; module (from start of string to ":")
@@ -107,21 +117,16 @@
     ;; Let distel complete the function or module, depending if ":" is part of
     ;; the search-string
     (if isok
-        (distel-completion-complete-function mod fun)
-      (distel-completion-complete-module search-string))
-    ;; The call to distel is asynchronous, lets wait some
-    (sleep-for 0.1)
+        (distel-completion-function mod fun)
+      (distel-completion-module search-string))
     ;; Add the module if needed
-    (mapcar (lambda (item)
-              (concat mod (when mod ":") item))
-            distel-completion-try-erl-complete-cache)))
-
-(defvar distel-completion-try-erl-args-cache '()
-  "Store the functions arguments.")
-(defvar distel-completion-try-erl-desc-cache ""
-  "Store of the description.")
-(defvar distel-completion-try-erl-complete-cache '()
-  "Completion candidates cache.")
+    (let* ((cands (distel-completion--wait-for-sync))
+           (answer
+            (progn
+              (mapcar (lambda (item)
+                        (concat mod (when mod ":") item))
+                      cands))))
+      answer)))
 
 (defun distel-completion-describe (mod fun)
   "Get the documentation of function MOD:FUN."
@@ -129,52 +134,37 @@
     (erl-spawn
       (erl-send-rpc node 'distel 'describe (list (intern mod)
                                                  (intern fun)))
-      (&distel-completion-receive-describe)))
-  distel-completion-try-erl-desc-cache)
-
-(defun &distel-completion-receive-describe ()
-  (erl-receive ()
-      ((['rex ['ok desc]]
-        (when desc
-          (setq distel-completion-try-erl-desc-cache (car desc))))
-       (else
-	(message "fail: %s" else)
-	(setq distel-completion-try-erl-desc-cache '())))))
+      (&distel-completion-receive)))
+  (distel-completion--wait-for-sync))
 
 (defun distel-completion-args (mod fun)
   "Find the arguments to a function MOD:FUN."
   (let ((node erl-nodename-cache))
     (erl-spawn
       (erl-send-rpc node 'distel 'arglists (list mod fun))
-      (&distel-completion-receive-args)))
-  distel-completion-try-erl-args-cache)
+      (&distel-completion-receive)))
+  (distel-completion--wait-for-sync))
 
-(defun &distel-completion-receive-args ()
-  (erl-receive ()
-      ((['rex 'error])
-       (['rex ['ok docs]]
-	(setq distel-completion-try-erl-args-cache docs))
-       (else
-	(message "fail: %s" else)
-	(setq distel-completion-try-erl-args-cache '())))))
-
-(defun distel-completion-complete-module (module)
-  "Get list of modulenames starting with `MODULE'."
+(defun distel-completion-module (module)
+  "Get list of modulenames starting with MODULE."
   (erl-spawn
     (erl-send-rpc node 'distel 'modules (list module))
-    (&distel-completion-receive-completions)))
+    (&distel-completion-receive))
+  (distel-completion--wait-for-sync))
 
-(defun distel-completion-complete-function (module function)
-  "Get list of function names starting with `FUNCTION'"
+(defun distel-completion-function (module function)
+  "Get list of function names in MODULE starting with FUNCTION."
   (erl-spawn
     (erl-send-rpc node 'distel 'functions (list module function))
-    (&distel-completion-receive-completions)))
+    (&distel-completion-receive))
+  (distel-completion--wait-for-sync))
 
-
-(defun &distel-completion-receive-completions ()
+(defun &distel-completion-receive ()
+  "Receiver loop."
+  (setq distel-completion-sync nil)
   (erl-receive ()
       ((['rex ['ok completions]]
-	(setq distel-completion-try-erl-complete-cache completions))
+	(setq distel-completion-sync completions))
        (other
 	(message "Unexpected reply: %s" other)))))
 

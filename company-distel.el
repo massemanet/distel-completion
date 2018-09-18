@@ -36,6 +36,7 @@
 
 ;;; Code:
 
+(require 'cl)
 (require 'distel-completion-lib)
 
 (defcustom company-distel-popup-help nil
@@ -93,7 +94,7 @@ function or a last used.")
     (no-cache
      ;; Try to use cache.
      t)
-    (t
+    (_
      ;; otherwise;
      ;; one of `init', `annotation', `match', or `pre-completion'
      nil)
@@ -113,7 +114,7 @@ Check if PREFIX ends with a ':'."
        (company-begin-with (company-distel-get-args prefix))
        (let ((this-command 'company-idle-begin))
          (company-post-command))))
-    (t
+    (_
      nil)))
 
 (defun company-distel-find-prefix ()
